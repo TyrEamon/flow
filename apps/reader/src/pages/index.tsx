@@ -27,7 +27,7 @@ import {
 } from '../hooks'
 import { reader, useReaderSnapshot } from '../models'
 import { lock } from '../styles'
-import { dbx, pack, uploadData } from '../sync'
+import { getProvider, pack } from '../sync'
 import { copy } from '../utils'
 
 const placeholder = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect fill="gray" fill-opacity="0" width="1" height="1"/></svg>`
@@ -123,7 +123,7 @@ const Library: React.FC = () => {
           books.find((b) => b.name === f.name),
         ) as BookRecord[]
 
-        uploadData(newRemoteBooks)
+        getProvider().writeData(newRemoteBooks)
         mutateRemoteBooks(newRemoteBooks, { revalidate: false })
       })
     }
@@ -149,12 +149,9 @@ const Library: React.FC = () => {
         if (file) continue
 
         setLoading(book.id)
-        await dbx
-          .filesDownload({ path: `/files/${remoteFile.name}` })
-          .then((d) => {
-            const blob: Blob = (d.result as any).fileBlob
-            return addFile(book.id, new File([blob], book.name))
-          })
+        await getProvider()
+          .download(remoteFile.name)
+          .then((blob) => addFile(book.id, new File([blob], book.name)))
         setLoading(undefined)
       }
     })
@@ -261,10 +258,7 @@ const Library: React.FC = () => {
                       if (!file) continue
 
                       setLoading(book.id)
-                      await dbx.filesUpload({
-                        path: `/files/${book.name}`,
-                        contents: file.file,
-                      })
+                      await getProvider().upload(book.name, file.file)
                       setLoading(undefined)
 
                       mutateRemoteFiles()
@@ -285,11 +279,9 @@ const Library: React.FC = () => {
                     // folder data is not updated after `filesDeleteBatch`
                     mutateRemoteFiles(
                       async (data) => {
-                        await dbx.filesDeleteBatch({
-                          entries: selectedBooks.map((b) => ({
-                            path: `/files/${b.name}`,
-                          })),
-                        })
+                        await getProvider().delete(
+                          selectedBooks.map((b) => b.name),
+                        )
                         return data?.filter(
                           (f) => !selectedBooks.find((b) => b.name === f.name),
                         )

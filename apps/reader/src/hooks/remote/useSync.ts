@@ -4,7 +4,7 @@ import { useSnapshot } from 'valtio'
 import { Annotation } from '@flow/reader/annotation'
 import { BookRecord } from '@flow/reader/db'
 import { BookTab } from '@flow/reader/models'
-import { uploadData } from '@flow/reader/sync'
+import { getProvider } from '@flow/reader/sync'
 
 import { useRemoteBooks } from './useRemote'
 
@@ -28,7 +28,7 @@ export function useSync(tab: BookTab) {
               ...changes,
             }
 
-            uploadData(remoteBooks)
+            getProvider().writeData(remoteBooks)
 
             return [...remoteBooks]
           }

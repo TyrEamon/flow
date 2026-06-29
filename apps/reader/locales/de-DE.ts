@@ -52,6 +52,32 @@ export default {
   'settings.synchronization.title': 'Synchronisation',
   'settings.synchronization.authorize': 'Autorisieren',
   'settings.synchronization.unauthorize': 'Deautorisieren',
+  'settings.synchronization.backend.dropbox': 'Dropbox',
+  'settings.synchronization.backend.webdav': 'WebDAV',
+  'settings.synchronization.backend.r2': 'Cloud-Konto (R2)',
+  'settings.synchronization.webdav.url': 'Server-URL',
+  'settings.synchronization.webdav.username': 'Benutzername',
+  'settings.synchronization.webdav.password': 'Passwort',
+  'settings.synchronization.r2.connected_as': 'Verbunden als:',
+  'settings.synchronization.r2.login_required':
+    'Anmeldung erforderlich — siehe Konto oben',
+  'settings.account.title': 'Konto',
+  'settings.account.email': 'E-Mail',
+  'settings.account.password': 'Passwort',
+  'settings.account.login': 'Anmelden',
+  'settings.account.register': 'Registrieren',
+  'settings.account.logout': 'Abmelden',
+  'settings.account.error.registration_closed':
+    'Registrierung ist geschlossen',
+  'settings.account.error.email_taken': 'E-Mail bereits registriert',
+  'settings.account.error.invalid_credentials':
+    'Ungültige E-Mail oder Passwort',
+  'settings.account.error.invalid_input':
+    'Ungültige E-Mail oder Passwort (min. 6 Zeichen)',
+  'settings.account.error.request_failed':
+    'Anfrage fehlgeschlagen, bitte erneut versuchen',
+  'settings.admin.title': 'Administration',
+  'settings.admin.registration_open': 'Registrierung erlauben',
   'settings.cache': 'Cache',
   'settings.cache.clear': 'Leeren',
   'settings.text_selection_menu': 'Textauswahlmenü',

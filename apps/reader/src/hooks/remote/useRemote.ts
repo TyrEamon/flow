@@ -1,17 +1,15 @@
 import useSWR from 'swr/immutable'
 
-import {
-  DATA_FILENAME,
-  dropboxBooksFetcher,
-  dropboxFilesFetcher,
-} from '@flow/reader/sync'
+import { DATA_FILENAME, getProvider } from '@flow/reader/sync'
 
 export function useRemoteFiles() {
-  return useSWR('/files', dropboxFilesFetcher, { shouldRetryOnError: false })
+  return useSWR('/files', () => getProvider().list(), {
+    shouldRetryOnError: false,
+  })
 }
 
 export function useRemoteBooks() {
-  return useSWR(`/${DATA_FILENAME}`, dropboxBooksFetcher, {
+  return useSWR(`/${DATA_FILENAME}`, () => getProvider().readData(), {
     shouldRetryOnError: false,
   })
 }
