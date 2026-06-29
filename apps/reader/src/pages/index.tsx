@@ -18,6 +18,7 @@ import { ReaderGridView, Button, TextField, DropZone } from '../components'
 import { BookRecord, CoverRecord, db } from '../db'
 import { addFile, fetchBook, handleFiles } from '../file'
 import {
+  useAuth,
   useDisablePinchZooming,
   useLibrary,
   useMobile,
@@ -112,8 +113,12 @@ const Library: React.FC = () => {
   const [readyToSync, setReadyToSync] = useState(false)
 
   const { groups } = useReaderSnapshot()
+  const { user, isAdmin } = useAuth()
 
   useEffect(() => {
+    // Shared backends (R2) maintain the catalog server-side on upload/delete,
+    // so a single client must not overwrite it from its local view.
+    if (getProvider().managesCatalogServerSide) return
     if (previousRemoteFiles && remoteFiles) {
       // to remove effect dependency `books`
       db?.books.toArray().then((books) => {
@@ -123,7 +128,7 @@ const Library: React.FC = () => {
           books.find((b) => b.name === f.name),
         ) as BookRecord[]
 
-        getProvider().writeData(newRemoteBooks)
+        getProvider().writeCatalog(newRemoteBooks)
         mutateRemoteBooks(newRemoteBooks, { revalidate: false })
       })
     }
@@ -258,7 +263,10 @@ const Library: React.FC = () => {
                       if (!file) continue
 
                       setLoading(book.id)
-                      await getProvider().upload(book.name, file.file)
+                      await getProvider().upload(book.name, file.file, {
+                        ...book,
+                        uploadedBy: user?.id,
+                      })
                       setLoading(undefined)
 
                       mutateRemoteFiles()
@@ -270,8 +278,16 @@ const Library: React.FC = () => {
                 <Button
                   onClick={async () => {
                     toggleSelect()
-                    const bookIds = [...selectedBookIds]
 
+                    // In a shared library you may only delete your own uploads
+                    // (admins may delete anything). Per-user backends: all.
+                    const shared = getProvider().managesCatalogServerSide
+                    const deletableBooks = selectedBooks.filter(
+                      (b) => !shared || isAdmin || b.uploadedBy === user?.id,
+                    )
+                    if (!deletableBooks.length) return
+
+                    const bookIds = deletableBooks.map((b) => b.id)
                     db?.books.bulkDelete(bookIds)
                     db?.covers.bulkDelete(bookIds)
                     db?.files.bulkDelete(bookIds)
@@ -280,10 +296,10 @@ const Library: React.FC = () => {
                     mutateRemoteFiles(
                       async (data) => {
                         await getProvider().delete(
-                          selectedBooks.map((b) => b.name),
+                          deletableBooks.map((b) => b.name),
                         )
                         return data?.filter(
-                          (f) => !selectedBooks.find((b) => b.name === f.name),
+                          (f) => !deletableBooks.find((b) => b.name === f.name),
                         )
                       },
                       { revalidate: false },

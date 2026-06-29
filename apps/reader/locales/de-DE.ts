@@ -67,8 +67,7 @@ export default {
   'settings.account.login': 'Anmelden',
   'settings.account.register': 'Registrieren',
   'settings.account.logout': 'Abmelden',
-  'settings.account.error.registration_closed':
-    'Registrierung ist geschlossen',
+  'settings.account.error.registration_closed': 'Registrierung ist geschlossen',
   'settings.account.error.email_taken': 'E-Mail bereits registriert',
   'settings.account.error.invalid_credentials':
     'Ungültige E-Mail oder Passwort',
@@ -76,7 +75,16 @@ export default {
     'Ungültige E-Mail oder Passwort (min. 6 Zeichen)',
   'settings.account.error.request_failed':
     'Anfrage fehlgeschlagen, bitte erneut versuchen',
+  'settings.account.invite_code': 'Einladungscode',
+  'settings.account.error.invalid_invite':
+    'Ungültiger oder aufgebrauchter Einladungscode',
   'settings.admin.title': 'Administration',
+  'settings.admin.delete': 'Löschen',
+  'settings.admin.invites.title': 'Einladungscodes',
+  'settings.admin.invites.custom_code': 'Eigener Code (optional)',
+  'settings.admin.invites.max_uses': 'Max. Nutzungen',
+  'settings.admin.invites.generate': 'Erzeugen',
+  'settings.admin.users.title': 'Benutzer',
   'settings.admin.registration_open': 'Registrierung erlauben',
   'settings.cache': 'Cache',
   'settings.cache.clear': 'Leeren',

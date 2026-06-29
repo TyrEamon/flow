@@ -3,10 +3,11 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 
 import { getSessionFromReq } from '@flow/reader/server/auth'
 import {
-  FILES_PREFIX,
   getR2Bucket,
   getR2Client,
-  userKey,
+  readCatalog,
+  SHARED_FILES,
+  writeCatalog,
 } from '@flow/reader/server/r2'
 
 export default async function handler(
@@ -21,18 +22,31 @@ export default async function handler(
   if (!Array.isArray(names) || names.some((n) => typeof n !== 'string')) {
     return res.status(400).json({ error: 'invalid_input' })
   }
-  if (names.length === 0) return res.json({ ok: true })
+  if (names.length === 0) return res.json({ deleted: [] })
+
+  const isAdmin = session.role === 'admin'
+  const catalog = await readCatalog()
+
+  // Only delete books you uploaded (admins may delete anything; orphan files
+  // with no catalog entry are admin-only).
+  const allowed = (names as string[]).filter((name) => {
+    if (isAdmin) return true
+    const entry = catalog.find((b) => b.name === name)
+    return !!entry && entry.uploadedBy === session.sub
+  })
+  if (allowed.length === 0) return res.json({ deleted: [] })
 
   await getR2Client().send(
     new DeleteObjectsCommand({
       Bucket: getR2Bucket(),
       Delete: {
-        Objects: names.map((name: string) => ({
-          Key: userKey(session.sub, FILES_PREFIX + name),
-        })),
+        Objects: allowed.map((name) => ({ Key: SHARED_FILES + name })),
       },
     }),
   )
 
-  res.json({ ok: true })
+  const next = catalog.filter((b) => !allowed.includes(b.name))
+  if (next.length !== catalog.length) await writeCatalog(next)
+
+  res.json({ deleted: allowed })
 }

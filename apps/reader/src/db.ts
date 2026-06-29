@@ -32,6 +32,8 @@ export interface BookRecord {
   configuration?: {
     typography?: TypographyConfiguration
   }
+  // For the shared (R2) library: the userId that uploaded this book.
+  uploadedBy?: string
 }
 
 export class DB extends Dexie {

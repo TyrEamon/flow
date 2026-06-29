@@ -43,16 +43,16 @@ export const dropboxProvider: StorageProvider = {
     return !!parseCookies()[mapToToken['dropbox']]
   },
   list() {
-    return dbx.filesListFolder({ path: '/files' }).then((d) =>
-      d.result.entries.map((e) => ({ name: e.name })),
-    )
+    return dbx
+      .filesListFolder({ path: '/files' })
+      .then((d) => d.result.entries.map((e) => ({ name: e.name })))
   },
   download(name) {
     return dbx
       .filesDownload({ path: `/files/${name}` })
       .then((d) => (d.result as any).fileBlob as Blob)
   },
-  async upload(name, blob) {
+  async upload(name, blob, _meta) {
     await dbx.filesUpload({ path: `/files/${name}`, contents: blob })
   },
   async delete(names) {
@@ -69,11 +69,19 @@ export const dropboxProvider: StorageProvider = {
       })
       .then((d) => deserializeData(d))
   },
-  async writeData(books: BookRecord[]) {
-    await dbx.filesUpload({
-      path: `/${DATA_FILENAME}`,
-      mode: { '.tag': 'overwrite' },
-      contents: serializeData(books),
-    })
+  // Per-user backend: catalog and progress live together in one data.json.
+  writeCatalog(books: BookRecord[]) {
+    return writeData(books)
   },
+  writeProgress(books: BookRecord[]) {
+    return writeData(books)
+  },
+}
+
+async function writeData(books: BookRecord[]) {
+  await dbx.filesUpload({
+    path: `/${DATA_FILENAME}`,
+    mode: { '.tag': 'overwrite' },
+    contents: serializeData(books),
+  })
 }

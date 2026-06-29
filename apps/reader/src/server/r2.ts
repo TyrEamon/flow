@@ -1,4 +1,17 @@
-import { S3Client } from '@aws-sdk/client-s3'
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3'
+
+export interface CatalogEntry {
+  id: string
+  name: string
+  size: number
+  metadata: unknown
+  createdAt: number
+  uploadedBy?: string
+}
 
 let _client: S3Client | undefined
 
@@ -25,10 +38,41 @@ export function getR2Bucket() {
   return bucket
 }
 
-/** Namespace every object under the authenticated user's prefix. */
-export function userKey(userId: string, sub: string) {
-  return `users/${userId}/${sub}`
+// Shared community library: book files + catalog are shared across all users.
+export const SHARED_FILES = 'shared/files/'
+export const SHARED_CATALOG = 'shared/catalog.json'
+
+/** A user's private reading-progress object key. */
+export function userProgressKey(userId: string) {
+  return `users/${userId}/progress.json`
 }
 
-export const FILES_PREFIX = 'files/'
-export const DATA_KEY = 'data.json'
+function isNotFound(e: any) {
+  return e?.name === 'NoSuchKey' || e?.$metadata?.httpStatusCode === 404
+}
+
+/** Read the shared book catalog (empty array if it doesn't exist yet). */
+export async function readCatalog(): Promise<CatalogEntry[]> {
+  try {
+    const out = await getR2Client().send(
+      new GetObjectCommand({ Bucket: getR2Bucket(), Key: SHARED_CATALOG }),
+    )
+    const text = await out.Body?.transformToString()
+    return text ? JSON.parse(text) : []
+  } catch (e) {
+    if (isNotFound(e)) return []
+    throw e
+  }
+}
+
+/** Overwrite the shared book catalog. */
+export async function writeCatalog(catalog: CatalogEntry[]) {
+  await getR2Client().send(
+    new PutObjectCommand({
+      Bucket: getR2Bucket(),
+      Key: SHARED_CATALOG,
+      Body: JSON.stringify(catalog),
+      ContentType: 'application/json',
+    }),
+  )
+}

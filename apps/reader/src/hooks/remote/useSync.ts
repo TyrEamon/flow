@@ -28,7 +28,7 @@ export function useSync(tab: BookTab) {
               ...changes,
             }
 
-            getProvider().writeData(remoteBooks)
+            getProvider().writeProgress(remoteBooks)
 
             return [...remoteBooks]
           }

@@ -95,7 +95,7 @@ export const webdavProvider: StorageProvider = {
     if (!res.ok) throw new Error(`WebDAV GET ${name} failed: ${res.status}`)
     return res.blob()
   },
-  async upload(name, blob) {
+  async upload(name, blob, _meta) {
     const { request } = getClient()
     await ensureDirs(request)
     const res = await request(`${FILES_DIR}/${encodeURIComponent(name)}`, {
@@ -108,10 +108,9 @@ export const webdavProvider: StorageProvider = {
     const { request } = getClient()
     await Promise.all(
       names.map(async (name) => {
-        const res = await request(
-          `${FILES_DIR}/${encodeURIComponent(name)}`,
-          { method: 'DELETE' },
-        )
+        const res = await request(`${FILES_DIR}/${encodeURIComponent(name)}`, {
+          method: 'DELETE',
+        })
         if (!res.ok && res.status !== 404) {
           throw new Error(`WebDAV DELETE ${name} failed: ${res.status}`)
         }
@@ -125,14 +124,22 @@ export const webdavProvider: StorageProvider = {
     if (!res.ok) throw new Error(`WebDAV GET data failed: ${res.status}`)
     return deserializeData(await res.text())
   },
-  async writeData(books: BookRecord[]) {
-    const { request } = getClient()
-    await ensureDirs(request)
-    const res = await request(`${BASE_DIR}/${DATA_FILENAME}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: serializeData(books),
-    })
-    if (!res.ok) throw new Error(`WebDAV PUT data failed: ${res.status}`)
+  // Per-user backend: catalog and progress live together in one data.json.
+  writeCatalog(books: BookRecord[]) {
+    return writeData(books)
   },
+  writeProgress(books: BookRecord[]) {
+    return writeData(books)
+  },
+}
+
+async function writeData(books: BookRecord[]) {
+  const { request } = getClient()
+  await ensureDirs(request)
+  const res = await request(`${BASE_DIR}/${DATA_FILENAME}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: serializeData(books),
+  })
+  if (!res.ok) throw new Error(`WebDAV PUT data failed: ${res.status}`)
 }

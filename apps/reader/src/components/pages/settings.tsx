@@ -222,14 +222,16 @@ const Account: React.FC = () => {
   const { user, login, register, logout } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [code, setCode] = useState('')
   const [error, setError] = useState<string>()
 
-  const submit = async (action: typeof login | typeof register) => {
+  const run = async (fn: () => Promise<unknown>) => {
     setError(undefined)
     try {
-      await action(email, password)
+      await fn()
       setEmail('')
       setPassword('')
+      setCode('')
     } catch (e: any) {
       setError(t(`error.${e.message}`) || e.message)
     }
@@ -265,12 +267,22 @@ const Account: React.FC = () => {
               setPassword(e.target.value)
             }
           />
-          {error && (
-            <p className="typescale-body-small text-error">{error}</p>
-          )}
+          <TextField
+            name={t('invite_code')}
+            value={code}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+              setCode(e.target.value)
+            }
+          />
+          {error && <p className="typescale-body-small text-error">{error}</p>}
           <div className="space-x-2">
-            <Button onClick={() => submit(login)}>{t('login')}</Button>
-            <Button variant="secondary" onClick={() => submit(register)}>
+            <Button onClick={() => run(() => login(email, password))}>
+              {t('login')}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => run(() => register(email, password, code))}
+            >
               {t('register')}
             </Button>
           </div>
@@ -280,36 +292,135 @@ const Account: React.FC = () => {
   )
 }
 
+interface Invite {
+  code: string
+  max_uses: number
+  used: number
+}
+interface ManagedUser {
+  id: string
+  email: string
+  role: 'admin' | 'user'
+}
+
 const Admin: React.FC = () => {
   const t = useTranslation('settings.admin')
-  const { isAdmin } = useAuth()
-  const [open, setOpen] = useState<boolean>()
+  const { isAdmin, user } = useAuth()
+  const [invites, setInvites] = useState<Invite[]>([])
+  const [users, setUsers] = useState<ManagedUser[]>([])
+  const [customCode, setCustomCode] = useState('')
+  const [maxUses, setMaxUses] = useState('1')
+
+  const loadInvites = () =>
+    fetch('/api/admin/invites')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setInvites(d.invites))
+  const loadUsers = () =>
+    fetch('/api/admin/users')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setUsers(d.users))
 
   useEffect(() => {
     if (!isAdmin) return
-    fetch('/api/admin/registration')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setOpen(d.open))
+    loadInvites()
+    loadUsers()
   }, [isAdmin])
 
   if (!isAdmin) return null
 
+  const generate = async () => {
+    await fetch('/api/admin/invites', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: customCode.trim() || undefined,
+        maxUses: Number(maxUses) || 1,
+      }),
+    })
+    setCustomCode('')
+    loadInvites()
+  }
+  const removeInvite = async (c: string) => {
+    await fetch(`/api/admin/invites?code=${encodeURIComponent(c)}`, {
+      method: 'DELETE',
+    })
+    loadInvites()
+  }
+  const removeUser = async (id: string) => {
+    await fetch(`/api/admin/users?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    })
+    loadUsers()
+  }
+
   return (
-    <Item title={t('title')}>
-      <Checkbox
-        name={t('registration_open')}
-        checked={!!open}
-        onChange={async (e) => {
-          const next = e.target.checked
-          setOpen(next)
-          await fetch('/api/admin/registration', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ open: next }),
-          })
-        }}
-      />
-    </Item>
+    <>
+      <Item title={t('invites.title')}>
+        <div className="space-y-2">
+          <ul className="space-y-1">
+            {invites.map((inv) => (
+              <li
+                key={inv.code}
+                className="typescale-body-small text-on-surface-variant flex items-center justify-between"
+              >
+                <span>
+                  <code>{inv.code}</code> ({inv.max_uses - inv.used}/
+                  {inv.max_uses})
+                </span>
+                <button
+                  className="text-error ml-2"
+                  onClick={() => removeInvite(inv.code)}
+                >
+                  {t('delete')}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex items-end gap-2">
+            <TextField
+              name={t('invites.custom_code')}
+              value={customCode}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setCustomCode(e.target.value)
+              }
+            />
+            <TextField
+              name={t('invites.max_uses')}
+              type="number"
+              className="w-20"
+              value={maxUses}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                setMaxUses(e.target.value)
+              }
+            />
+            <Button onClick={generate}>{t('invites.generate')}</Button>
+          </div>
+        </div>
+      </Item>
+      <Item title={t('users.title')}>
+        <ul className="space-y-1">
+          {users.map((u) => (
+            <li
+              key={u.id}
+              className="typescale-body-small text-on-surface-variant flex items-center justify-between"
+            >
+              <span>
+                {u.email}
+                {u.role === 'admin' ? ' (admin)' : ''}
+              </span>
+              {u.id !== user?.id && (
+                <button
+                  className="text-error ml-2"
+                  onClick={() => removeUser(u.id)}
+                >
+                  {t('delete')}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      </Item>
+    </>
   )
 }
 

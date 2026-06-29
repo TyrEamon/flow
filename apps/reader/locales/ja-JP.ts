@@ -75,7 +75,16 @@ export default {
     'メールアドレスまたはパスワードが無効です（6文字以上）',
   'settings.account.error.request_failed':
     'リクエストに失敗しました。再試行してください',
+  'settings.account.invite_code': '招待コード',
+  'settings.account.error.invalid_invite':
+    '招待コードが無効か使い切られています',
   'settings.admin.title': '管理',
+  'settings.admin.delete': '削除',
+  'settings.admin.invites.title': '招待コード',
+  'settings.admin.invites.custom_code': 'カスタムコード（任意）',
+  'settings.admin.invites.max_uses': '使用回数',
+  'settings.admin.invites.generate': '生成',
+  'settings.admin.users.title': 'ユーザー',
   'settings.admin.registration_open': '登録を許可する',
   'settings.cache': 'キャッシュ',
   'settings.cache.clear': 'クリア',

@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import useSWR from 'swr'
 
 export interface AuthUser {
+  id: string
   email: string
   role: 'admin' | 'user'
 }
@@ -25,11 +26,11 @@ async function post(url: string, body: unknown) {
 }
 
 export function useAuth() {
-  const { data: user, mutate, isValidating } = useSWR(
-    '/api/auth/me',
-    meFetcher,
-    { shouldRetryOnError: false },
-  )
+  const {
+    data: user,
+    mutate,
+    isValidating,
+  } = useSWR('/api/auth/me', meFetcher, { shouldRetryOnError: false })
 
   const login = useCallback(
     async (email: string, password: string) => {
@@ -41,8 +42,8 @@ export function useAuth() {
   )
 
   const register = useCallback(
-    async (email: string, password: string) => {
-      const data = await post('/api/auth/register', { email, password })
+    async (email: string, password: string, code: string) => {
+      const data = await post('/api/auth/register', { email, password, code })
       await mutate(data.user, { revalidate: false })
       return data.user as AuthUser
     },

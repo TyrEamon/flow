@@ -3,13 +3,12 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 
 import { getSessionFromReq } from '@flow/reader/server/auth'
 import {
-  DATA_KEY,
   getR2Bucket,
   getR2Client,
-  userKey,
+  userProgressKey,
 } from '@flow/reader/server/r2'
 
-// Store the serialized `data.json` text verbatim.
+// Per-user private reading progress / annotations.
 export const config = { api: { bodyParser: false } }
 
 function readBody(req: NextApiRequest): Promise<string> {
@@ -29,7 +28,7 @@ export default async function handler(
   if (!session) return res.status(401).json({ error: 'unauthorized' })
 
   const Bucket = getR2Bucket()
-  const Key = userKey(session.sub, DATA_KEY)
+  const Key = userProgressKey(session.sub)
   const client = getR2Client()
 
   if (req.method === 'GET') {
@@ -37,10 +36,10 @@ export default async function handler(
       const out = await client.send(new GetObjectCommand({ Bucket, Key }))
       const text = await out.Body?.transformToString()
       res.setHeader('Content-Type', 'application/json')
-      res.send(text ?? '')
+      res.send(text ?? '{}')
     } catch (e: any) {
       if (e?.name === 'NoSuchKey' || e?.$metadata?.httpStatusCode === 404) {
-        return res.status(404).end()
+        return res.json({})
       }
       throw e
     }
@@ -53,7 +52,7 @@ export default async function handler(
       new PutObjectCommand({
         Bucket,
         Key,
-        Body: body,
+        Body: body || '{}',
         ContentType: 'application/json',
       }),
     )

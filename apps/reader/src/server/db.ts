@@ -35,6 +35,14 @@ export function ensureSchema(): Promise<void> {
         value text
       )
     `
+    await sql`
+      CREATE TABLE IF NOT EXISTS invite_codes (
+        code text PRIMARY KEY,
+        max_uses int NOT NULL DEFAULT 1,
+        used int NOT NULL DEFAULT 0,
+        created_at timestamptz NOT NULL DEFAULT now()
+      )
+    `
     await bootstrapAdmin()
   })().catch((e) => {
     // allow a retry on the next request if setup failed
@@ -52,7 +60,8 @@ export async function getUserByEmail(email: string) {
 }
 
 export async function getUserById(id: string) {
-  const { rows } = await sql<UserRow>`SELECT * FROM users WHERE id = ${id} LIMIT 1`
+  const { rows } =
+    await sql<UserRow>`SELECT * FROM users WHERE id = ${id} LIMIT 1`
   return rows[0]
 }
 
@@ -85,4 +94,57 @@ export async function setSetting(key: string, value: string) {
 
 export async function isRegistrationOpen() {
   return (await getSetting(REGISTRATION_OPEN_KEY)) === 'true'
+}
+
+// --- Users (admin management) ---
+
+export async function listUsers() {
+  const { rows } = await sql<
+    Pick<UserRow, 'id' | 'email' | 'role' | 'created_at'>
+  >`
+    SELECT id, email, role, created_at FROM users ORDER BY created_at ASC
+  `
+  return rows
+}
+
+export async function deleteUser(id: string) {
+  await sql`DELETE FROM users WHERE id = ${id}`
+}
+
+// --- Invite codes ---
+
+export interface InviteRow {
+  code: string
+  max_uses: number
+  used: number
+  created_at: string
+}
+
+export async function listInvites() {
+  const { rows } = await sql<InviteRow>`
+    SELECT * FROM invite_codes ORDER BY created_at DESC
+  `
+  return rows
+}
+
+export async function createInvite(code: string, maxUses = 1) {
+  const { rows } = await sql<InviteRow>`
+    INSERT INTO invite_codes (code, max_uses) VALUES (${code}, ${maxUses})
+    RETURNING *
+  `
+  return rows[0]!
+}
+
+export async function deleteInvite(code: string) {
+  await sql`DELETE FROM invite_codes WHERE code = ${code}`
+}
+
+/** Atomically consume one use of a code. Returns true if it was valid. */
+export async function consumeInvite(code: string) {
+  const { rows } = await sql`
+    UPDATE invite_codes SET used = used + 1
+    WHERE code = ${code} AND used < max_uses
+    RETURNING code
+  `
+  return rows.length > 0
 }
