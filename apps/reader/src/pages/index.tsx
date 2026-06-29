@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { useLiveQuery } from 'dexie-react-hooks'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   MdCheckBox,
   MdCheckBoxOutlineBlank,
@@ -16,7 +16,7 @@ import { usePrevious } from 'react-use'
 
 import { ReaderGridView, Button, TextField, DropZone } from '../components'
 import { BookRecord, CoverRecord, db } from '../db'
-import { addFile, fetchBook, handleFiles } from '../file'
+import { addBook, extractPreview, fetchBook, handleFiles } from '../file'
 import {
   useAuth,
   useDisablePinchZooming,
@@ -96,6 +96,18 @@ export default function Index() {
   )
 }
 
+const DISC_PREFIX = 'disc:webdav:'
+
+/** A normalized item for the library grid: either a real local book record or
+ * a "discovered" remote file that hasn't been imported yet (placeholder). */
+interface DisplayBook {
+  id: string
+  name: string
+  title: string
+  isRemote: boolean
+  book?: BookRecord
+}
+
 const Library: React.FC = () => {
   const books = useLibrary()
   const covers = useLiveQuery(() => db?.covers.toArray() ?? [])
@@ -109,11 +121,25 @@ const Library: React.FC = () => {
   const [select, toggleSelect] = useBoolean(false)
   const [selectedBookIds, { add, has, toggle, reset }] = useSet<string>()
 
-  const [loading, setLoading] = useState<string | undefined>()
-  const [readyToSync, setReadyToSync] = useState(false)
+  const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set())
+  const [discoveredTitles, setDiscoveredTitles] = useState<
+    Record<string, string>
+  >({})
+  const [page, setPage] = useState(0)
+
+  const mobile = useMobile()
+  const pageSize = mobile ? 9 : 30
 
   const { groups } = useReaderSnapshot()
   const { user, isAdmin } = useAuth()
+
+  const startLoading = (id: string) => setLoadingIds((s) => new Set(s).add(id))
+  const stopLoading = (id: string) =>
+    setLoadingIds((s) => {
+      const next = new Set(s)
+      next.delete(id)
+      return next
+    })
 
   useEffect(() => {
     // Shared backends (R2) maintain the catalog server-side on upload/delete,
@@ -124,9 +150,9 @@ const Library: React.FC = () => {
       db?.books.toArray().then((books) => {
         if (books.length === 0) return
 
-        const newRemoteBooks = remoteFiles.map((f) =>
-          books.find((b) => b.name === f.name),
-        ) as BookRecord[]
+        const newRemoteBooks = remoteFiles
+          .map((f) => books.find((b) => b.name === f.name))
+          .filter(Boolean) as BookRecord[]
 
         getProvider().writeCatalog(newRemoteBooks)
         mutateRemoteBooks(newRemoteBooks, { revalidate: false })
@@ -137,34 +163,98 @@ const Library: React.FC = () => {
 
   useEffect(() => {
     if (!previousRemoteBooks && remoteBooks) {
-      db?.books.bulkPut(remoteBooks).then(() => setReadyToSync(true))
+      db?.books.bulkPut(remoteBooks)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remoteBooks])
 
   useEffect(() => {
-    if (!remoteFiles || !readyToSync) return
-
-    db?.books.toArray().then(async (books) => {
-      for (const remoteFile of remoteFiles) {
-        const book = books.find((b) => b.name === remoteFile.name)
-        if (!book) continue
-
-        const file = await db?.files.get(book.id)
-        if (file) continue
-
-        setLoading(book.id)
-        await getProvider()
-          .download(remoteFile.name)
-          .then((blob) => addFile(book.id, new File([blob], book.name)))
-        setLoading(undefined)
-      }
-    })
-  }, [readyToSync, remoteFiles])
-
-  useEffect(() => {
     if (!select) reset()
   }, [reset, select])
+
+  // Merged, stably-sorted list: local books + discovered remote files (files
+  // present remotely but not yet in the local catalog — e.g. dropped straight
+  // into a WebDAV folder). Discovered items stay out of `db.books` until opened.
+  const items = useMemo<DisplayBook[]>(() => {
+    const localBooks = books ?? []
+    const localNames = new Set(localBooks.map((b) => b.name))
+    const placeholders = (remoteFiles ?? [])
+      .filter((f) => !localNames.has(f.name))
+      .map<DisplayBook>((f) => ({
+        id: DISC_PREFIX + f.name,
+        name: f.name,
+        title: discoveredTitles[f.name] ?? f.name,
+        isRemote: true,
+      }))
+    const locals = localBooks.map<DisplayBook>((b) => ({
+      id: b.id,
+      name: b.name,
+      title: b.name,
+      isRemote: false,
+      book: b,
+    }))
+    return [...locals, ...placeholders].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    )
+  }, [books, remoteFiles, discoveredTitles])
+
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize))
+  const safePage = Math.min(page, totalPages - 1)
+  const pageItems = items.slice(
+    safePage * pageSize,
+    safePage * pageSize + pageSize,
+  )
+
+  useEffect(() => {
+    if (page > totalPages - 1) setPage(totalPages - 1)
+  }, [page, totalPages])
+
+  // Lazily fetch covers for the CURRENT page only. Books live remotely; to show
+  // a cover we must download & parse the epub (the cover is inside the zip), so
+  // we do it page-by-page, parse the cover, then discard the file blob. Opening
+  // a book (below) is what actually stores it locally.
+  const attempted = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const provider = getProvider()
+    if (!provider.isConfigured?.()) return
+
+    const pending = pageItems.filter((item) => {
+      if (covers?.some((c) => c.id === item.id && c.cover)) return false
+      if (attempted.current.has(item.id)) return false
+      return true
+    })
+    if (!pending.length) return
+
+    let cancelled = false
+    const queue = [...pending]
+    const work = async () => {
+      while (queue.length && !cancelled) {
+        const item = queue.shift()!
+        attempted.current.add(item.id)
+        startLoading(item.id)
+        try {
+          const blob = await provider.download(item.name)
+          const { cover, metadata } = await extractPreview(
+            new File([blob], item.name),
+          )
+          await db?.covers.put({ id: item.id, cover })
+          if (item.isRemote && metadata?.title) {
+            setDiscoveredTitles((m) => ({ ...m, [item.name]: metadata.title }))
+          }
+        } catch (e) {
+          console.error('cover preview failed:', item.name, e)
+        } finally {
+          stopLoading(item.id)
+        }
+      }
+    }
+    // limit concurrency to avoid hammering the WebDAV/R2 endpoint
+    Promise.all(Array.from({ length: 4 }, work))
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safePage, pageSize, remoteFiles, covers])
 
   if (groups.length) return null
   if (!books) return null
@@ -172,7 +262,27 @@ const Library: React.FC = () => {
   const selectedBooks = [...selectedBookIds].map(
     (id) => books.find((b) => b.id === id)!,
   )
-  const allSelected = selectedBookIds.size === books.length
+  const allSelected = !!books.length && selectedBookIds.size === books.length
+
+  const openBook = async (item: DisplayBook) => {
+    if (item.book) {
+      // local record; file (if missing) is fetched on render
+      reader.addTab(item.book)
+      return
+    }
+    // discovered placeholder: download now, import into the library, then open
+    startLoading(item.id)
+    try {
+      const blob = await getProvider().download(item.name)
+      const book = await addBook(new File([blob], item.name))
+      mutateRemoteFiles()
+      reader.addTab(book)
+    } catch (e) {
+      console.error('failed to open remote book:', item.name, e)
+    } finally {
+      stopLoading(item.id)
+    }
+  }
 
   return (
     <DropZone
@@ -262,12 +372,12 @@ const Library: React.FC = () => {
                       const file = await db?.files.get(book.id)
                       if (!file) continue
 
-                      setLoading(book.id)
+                      startLoading(book.id)
                       await getProvider().upload(book.name, file.file, {
                         ...book,
                         uploadedBy: user?.id,
                       })
-                      setLoading(undefined)
+                      stopLoading(book.id)
 
                       mutateRemoteFiles()
                     }
@@ -346,46 +456,59 @@ const Library: React.FC = () => {
             rowGap: lock(24, 40),
           }}
         >
-          {books.map((book) => (
+          {pageItems.map((item) => (
             <Book
-              key={book.id}
-              book={book}
+              key={item.id}
+              item={item}
               covers={covers}
-              select={select}
-              selected={has(book.id)}
-              loading={loading === book.id}
-              toggle={toggle}
+              remoteFiles={remoteFiles}
+              select={select && !item.isRemote}
+              selected={has(item.id)}
+              loading={loadingIds.has(item.id)}
+              onToggle={() => toggle(item.id)}
+              onOpen={() => openBook(item)}
             />
           ))}
         </ul>
+        {totalPages > 1 && (
+          <Pagination
+            page={safePage}
+            totalPages={totalPages}
+            onChange={setPage}
+          />
+        )}
       </div>
     </DropZone>
   )
 }
 
 interface BookProps {
-  book: BookRecord
+  item: DisplayBook
   covers?: CoverRecord[]
+  remoteFiles?: { name: string }[]
   select?: boolean
   selected?: boolean
   loading?: boolean
-  toggle: (id: string) => void
+  onToggle: () => void
+  onOpen: () => void
 }
 const Book: React.FC<BookProps> = ({
-  book,
+  item,
   covers,
+  remoteFiles,
   select,
   selected,
   loading,
-  toggle,
+  onToggle,
+  onOpen,
 }) => {
-  const remoteFiles = useRemoteFiles()
-
   const router = useRouter()
   const mobile = useMobile()
 
-  const cover = covers?.find((c) => c.id === book.id)?.cover
-  const remoteFile = remoteFiles.data?.find((f) => f.name === book.name)
+  const cover = covers?.find((c) => c.id === item.id)?.cover
+  const percentage = item.book?.percentage
+  const synced =
+    item.isRemote || !!remoteFiles?.find((f) => f.name === item.name)
 
   const Icon = selected ? MdCheckBox : MdCheckBoxOutlineBlank
 
@@ -396,10 +519,10 @@ const Book: React.FC<BookProps> = ({
         className="border-inverse-on-surface relative border"
         onClick={async () => {
           if (select) {
-            toggle(book.id)
+            onToggle()
           } else {
             if (mobile) await router.push('/_')
-            reader.addTab(book)
+            onOpen()
           }
         }}
       >
@@ -409,9 +532,9 @@ const Book: React.FC<BookProps> = ({
             loading && 'progress-bit w-[5%]',
           )}
         />
-        {book.percentage !== undefined && (
+        {percentage !== undefined && (
           <div className="typescale-body-large absolute right-0 bg-gray-500/60 px-2 text-gray-100">
-            {(book.percentage * 100).toFixed()}%
+            {(percentage * 100).toFixed()}%
           </div>
         )}
         <img
@@ -435,17 +558,94 @@ const Book: React.FC<BookProps> = ({
 
       <div
         className="line-clamp-2 text-on-surface-variant typescale-body-small lg:typescale-body-medium mt-2 w-full"
-        title={book.name}
+        title={item.title}
       >
         <MdCheckCircle
           className={clsx(
             'mr-1 mb-0.5 inline',
-            remoteFile ? 'text-tertiary' : 'text-surface-variant',
+            synced ? 'text-tertiary' : 'text-surface-variant',
           )}
           size={16}
         />
-        {book.name}
+        {item.title}
       </div>
+    </div>
+  )
+}
+
+/** Compact page navigation with first/last + a small window of page numbers. */
+interface PaginationProps {
+  page: number
+  totalPages: number
+  onChange: (page: number) => void
+}
+const Pagination: React.FC<PaginationProps> = ({
+  page,
+  totalPages,
+  onChange,
+}) => {
+  // window of pages around the current one
+  const window = 1
+  const pages: number[] = []
+  for (
+    let i = Math.max(0, page - window);
+    i <= Math.min(totalPages - 1, page + window);
+    i++
+  ) {
+    pages.push(i)
+  }
+  const first = pages[0]!
+  const last = pages[pages.length - 1]!
+
+  const btn = (p: number, label?: string, key?: string) => (
+    <button
+      key={key ?? p}
+      onClick={() => onChange(p)}
+      className={clsx(
+        'typescale-body-small min-w-[28px] rounded px-2 py-1',
+        p === page
+          ? 'bg-tertiary text-on-tertiary'
+          : 'text-on-surface-variant hover:bg-surface-variant',
+      )}
+    >
+      {label ?? p + 1}
+    </button>
+  )
+
+  return (
+    <div className="my-6 flex items-center justify-center gap-1">
+      <button
+        onClick={() => onChange(Math.max(0, page - 1))}
+        disabled={page === 0}
+        className="typescale-body-small text-on-surface-variant disabled:text-surface-variant px-2 py-1"
+      >
+        ‹
+      </button>
+      {first > 0 && (
+        <>
+          {btn(0)}
+          {first > 1 && <span className="text-surface-variant px-1">…</span>}
+        </>
+      )}
+      {pages.map((p) => btn(p))}
+      {last < totalPages - 1 && (
+        <>
+          {last < totalPages - 2 && (
+            <span className="text-surface-variant px-1">…</span>
+          )}
+          {btn(totalPages - 1)}
+        </>
+      )}
+      <button
+        onClick={() => onChange(Math.min(totalPages - 1, page + 1))}
+        disabled={page === totalPages - 1}
+        className="typescale-body-small text-on-surface-variant disabled:text-surface-variant px-2 py-1"
+      >
+        ›
+      </button>
+      <span className="typescale-body-small text-on-surface-variant ml-2">
+        {page + 1} / {totalPages}
+      </span>
     </div>
   )
 }

@@ -4,10 +4,16 @@ import { StorageProvider } from '../types'
 import { getWebDAVConfig } from '../webdavConfig'
 
 const BASE_DIR = 'flow'
-const FILES_DIR = `${BASE_DIR}/files`
+const DEFAULT_FILES_DIR = `${BASE_DIR}/files`
 
 function trimSlashes(s: string) {
   return s.replace(/^\/+|\/+$/g, '')
+}
+
+/** Folder to scan for book files (user-configurable; defaults to flow/files). */
+function getFilesDir() {
+  const dir = getWebDAVConfig().directory?.trim()
+  return dir ? trimSlashes(dir) : DEFAULT_FILES_DIR
 }
 
 function authHeader(username: string, password: string) {
@@ -34,9 +40,21 @@ function getClient() {
   return { base, request }
 }
 
-/** Create the `/flow` and `/flow/files` collections, ignoring "already exists". */
+/**
+ * Create the metadata dir (`flow`) and every level of the files dir, ignoring
+ * "already exists". Parents are created before children so nested custom
+ * directories (e.g. `books/light-novels`) work.
+ */
 async function ensureDirs(request: ReturnType<typeof getClient>['request']) {
-  for (const dir of [BASE_DIR, FILES_DIR]) {
+  // Build the list of collection paths to create, parents first.
+  const segments = getFilesDir().split('/')
+  const filesDirs: string[] = []
+  for (let i = 0; i < segments.length; i++) {
+    filesDirs.push(segments.slice(0, i + 1).join('/'))
+  }
+  const dirs = Array.from(new Set([BASE_DIR, ...filesDirs]))
+
+  for (const dir of dirs) {
     const res = await request(dir, { method: 'MKCOL' })
     // 201 created, 405 already exists, 301/302 some servers on trailing slash
     if (![201, 405, 301, 302].includes(res.status) && res.status >= 400) {
@@ -62,7 +80,7 @@ export const webdavProvider: StorageProvider = {
   },
   async list() {
     const { request } = getClient()
-    const res = await request(FILES_DIR, {
+    const res = await request(getFilesDir(), {
       method: 'PROPFIND',
       headers: { Depth: '1' },
     })
@@ -91,14 +109,14 @@ export const webdavProvider: StorageProvider = {
   },
   async download(name) {
     const { request } = getClient()
-    const res = await request(`${FILES_DIR}/${encodeURIComponent(name)}`)
+    const res = await request(`${getFilesDir()}/${encodeURIComponent(name)}`)
     if (!res.ok) throw new Error(`WebDAV GET ${name} failed: ${res.status}`)
     return res.blob()
   },
   async upload(name, blob, _meta) {
     const { request } = getClient()
     await ensureDirs(request)
-    const res = await request(`${FILES_DIR}/${encodeURIComponent(name)}`, {
+    const res = await request(`${getFilesDir()}/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: blob,
     })
@@ -108,9 +126,12 @@ export const webdavProvider: StorageProvider = {
     const { request } = getClient()
     await Promise.all(
       names.map(async (name) => {
-        const res = await request(`${FILES_DIR}/${encodeURIComponent(name)}`, {
-          method: 'DELETE',
-        })
+        const res = await request(
+          `${getFilesDir()}/${encodeURIComponent(name)}`,
+          {
+            method: 'DELETE',
+          },
+        )
         if (!res.ok && res.status !== 404) {
           throw new Error(`WebDAV DELETE ${name} failed: ${res.status}`)
         }

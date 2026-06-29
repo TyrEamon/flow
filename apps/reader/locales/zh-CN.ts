@@ -58,6 +58,7 @@ export default {
   'settings.synchronization.webdav.url': '服务器地址',
   'settings.synchronization.webdav.username': '用户名',
   'settings.synchronization.webdav.password': '密码',
+  'settings.synchronization.webdav.directory': '扫描目录',
   'settings.synchronization.r2.connected_as': '已连接：',
   'settings.synchronization.r2.login_required': '需要登录 —— 见上方「账号」',
   'settings.account.title': '账号',

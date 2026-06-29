@@ -58,6 +58,7 @@ export default {
   'settings.synchronization.webdav.url': 'サーバー URL',
   'settings.synchronization.webdav.username': 'ユーザー名',
   'settings.synchronization.webdav.password': 'パスワード',
+  'settings.synchronization.webdav.directory': 'スキャンディレクトリ',
   'settings.synchronization.r2.connected_as': '接続中：',
   'settings.synchronization.r2.login_required':
     'ログインが必要です — 上の「アカウント」を参照',

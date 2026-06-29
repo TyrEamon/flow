@@ -213,6 +213,14 @@ const WebDAVConfigForm: React.FC = () => {
           update({ password: e.target.value })
         }
       />
+      <TextField
+        name={t('webdav.directory')}
+        placeholder="flow/files"
+        value={config.directory ?? ''}
+        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+          update({ directory: e.target.value })
+        }
+      />
     </div>
   )
 }

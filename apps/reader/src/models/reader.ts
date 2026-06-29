@@ -10,8 +10,9 @@ import Section from '@flow/epubjs/types/section'
 
 import { AnnotationColor, AnnotationType } from '../annotation'
 import { BookRecord, db } from '../db'
-import { fileToEpub } from '../file'
+import { addFile, fileToEpub } from '../file'
 import { defaultStyle } from '../styles'
+import { getProvider } from '../sync'
 
 import { dfs, find, INode } from './tree'
 
@@ -333,9 +334,22 @@ export class BookTab extends BaseTab {
     this._el = ref(el)
 
     const file = await db?.files.get(this.book.id)
-    if (!file) return
-
-    this.epub = ref(await fileToEpub(file.file))
+    if (file) {
+      this.epub = ref(await fileToEpub(file.file))
+    } else {
+      // The book exists in the catalog but its file isn't stored locally yet
+      // (e.g. someone else uploaded it to the shared library, or it was synced
+      // as metadata only). Download it on open, then store it for next time.
+      try {
+        const blob = await getProvider().download(this.book.name)
+        const f = new File([blob], this.book.name)
+        await addFile(this.book.id, f)
+        this.epub = ref(await fileToEpub(f))
+      } catch (e) {
+        console.error('failed to fetch book file on open:', this.book.name, e)
+        return
+      }
+    }
 
     this.epub.loaded.navigation.then((nav) => {
       this.nav = nav

@@ -59,7 +59,9 @@ export async function addBook(file: File) {
 }
 
 export async function addFile(id: string, file: File, epub?: Book) {
-  db?.files.add({ id, file })
+  // `put` (not `add`) so re-adding a file/cover is idempotent — the library's
+  // lazy cover preview may already have written a cover under this id.
+  db?.files.put({ id, file })
 
   if (!epub) {
     epub = await fileToEpub(file)
@@ -67,7 +69,23 @@ export async function addFile(id: string, file: File, epub?: Book) {
 
   const url = await epub.coverUrl()
   const cover = url && (await toDataUrl(url))
-  db?.covers.add({ id, cover })
+  db?.covers.put({ id, cover })
+}
+
+/**
+ * Parse an epub and return its cover (data URL) and metadata, WITHOUT storing
+ * the file or creating a book record. Used to lazily preview covers/titles for
+ * books that live remotely (shared R2 catalog / discovered WebDAV files)
+ * without filling local storage — the file blob is discarded afterwards.
+ */
+export async function extractPreview(file: File) {
+  const epub = await fileToEpub(file)
+  const [url, metadata] = await Promise.all([
+    epub.coverUrl(),
+    epub.loaded.metadata,
+  ])
+  const cover = url ? await toDataUrl(url) : null
+  return { cover, metadata }
 }
 
 export function readBlob(fn: (reader: FileReader) => void) {

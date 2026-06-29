@@ -58,6 +58,7 @@ export default {
   'settings.synchronization.webdav.url': 'Server-URL',
   'settings.synchronization.webdav.username': 'Benutzername',
   'settings.synchronization.webdav.password': 'Passwort',
+  'settings.synchronization.webdav.directory': 'Scan-Verzeichnis',
   'settings.synchronization.r2.connected_as': 'Verbunden als:',
   'settings.synchronization.r2.login_required':
     'Anmeldung erforderlich — siehe Konto oben',
