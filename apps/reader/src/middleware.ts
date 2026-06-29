@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-server-import-in-page -- this IS the middleware entry (src/middleware.ts), a valid Next 12.2+ location the older eslint-config-next rule doesn't recognize */
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 

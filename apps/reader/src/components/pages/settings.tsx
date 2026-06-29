@@ -11,7 +11,6 @@ import {
   useForceRender,
   useTranslation,
 } from '@flow/reader/hooks'
-import { localeNames } from '../../../locales'
 import { useSettings } from '@flow/reader/state'
 import {
   BackendId,
@@ -24,6 +23,7 @@ import {
   setWebDAVConfig,
 } from '@flow/reader/sync'
 
+import { localeNames } from '../../../locales'
 import { Button } from '../Button'
 import { Checkbox, Select, TextField } from '../Form'
 import { Page } from '../Page'
