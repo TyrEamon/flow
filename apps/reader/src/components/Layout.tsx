@@ -1,5 +1,6 @@
 import { Overlay } from '@literal-ui/core'
 import clsx from 'clsx'
+import { useRouter } from 'next/router'
 import { ComponentProps, useEffect, useState } from 'react'
 import { useMemo } from 'react'
 import { IconType } from 'react-icons'
@@ -222,6 +223,16 @@ function NavigationBar() {
   const r = useReaderSnapshot()
   const readMode = r.focusedTab?.isBook
   const [visible, setVisible] = useRecoilState(navbarState)
+  const setAction = useSetAction()
+  const router = useRouter()
+  const t = useTranslation()
+
+  const returnToLibrary = () => {
+    reader.clear()
+    setAction(undefined)
+    setVisible(false)
+    router.replace('/')
+  }
 
   return (
     <>
@@ -233,10 +244,14 @@ function NavigationBar() {
       )}
       <div className="NavigationBar bg-surface border-surface-variant fixed inset-x-0 bottom-0 z-10 border-t">
         {readMode ? (
-          <ViewActionBar
-            env={Env.Mobile}
-            className={clsx(visible || 'hidden')}
-          />
+          <ActionBar className={clsx(visible || 'hidden')}>
+            <Action
+              title={t('home.title')}
+              Icon={RiHome6Line}
+              onClick={returnToLibrary}
+            />
+            <ViewActions env={Env.Mobile} />
+          </ActionBar>
         ) : (
           <PageActionBar env={Env.Mobile} />
         )}
@@ -249,6 +264,34 @@ interface ActionBarProps extends ComponentProps<'ul'> {}
 function ActionBar({ className, ...props }: ActionBarProps) {
   return (
     <ul className={clsx('ActionBar flex sm:flex-col', className)} {...props} />
+  )
+}
+
+interface ViewActionsProps {
+  env: Env
+}
+
+function ViewActions({ env }: ViewActionsProps) {
+  const [action, setAction] = useAction()
+  const t = useTranslation()
+
+  return (
+    <>
+      {viewActions
+        .filter((a) => a.env & env)
+        .map(({ name, title, Icon }) => {
+          const active = action === name
+          return (
+            <Action
+              title={t(`${title}.title`)}
+              Icon={Icon}
+              active={active}
+              onClick={() => setAction(active ? undefined : name)}
+              key={name}
+            />
+          )
+        })}
+    </>
   )
 }
 
