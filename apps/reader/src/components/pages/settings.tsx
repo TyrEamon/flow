@@ -2,7 +2,7 @@ import { useEventListener } from '@literal-ui/hooks'
 import Dexie from 'dexie'
 import { useRouter } from 'next/router'
 import { parseCookies, destroyCookie } from 'nookies'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   ColorScheme,
@@ -10,6 +10,7 @@ import {
   useColorScheme,
   useForceRender,
   useTranslation,
+  useWebDAVConfig,
 } from '@flow/reader/hooks'
 import { useSettings } from '@flow/reader/state'
 import {
@@ -180,13 +181,25 @@ const DropboxConfig: React.FC = () => {
 
 const WebDAVConfigForm: React.FC = () => {
   const t = useTranslation('settings.synchronization')
+  const { remoteConfig, save } = useWebDAVConfig()
   const [config, setConfig] = useState(getWebDAVConfig())
 
+  // Backfill the form once the account's saved config arrives (new device).
+  const backfilled = useRef(false)
+  useEffect(() => {
+    if (backfilled.current || !remoteConfig?.url) return
+    backfilled.current = true
+    setConfig((c) => (c.url ? c : { ...c, ...remoteConfig }))
+  }, [remoteConfig])
+
+  // local change → instant (provider reads localStorage)
   const update = (partial: Partial<typeof config>) => {
     const next = { ...config, ...partial }
     setConfig(next)
     setWebDAVConfig(next)
   }
+  // leaving a field → persist to the account (synced across devices)
+  const persist = () => save(config)
 
   return (
     <div className="space-y-2">
@@ -197,6 +210,7 @@ const WebDAVConfigForm: React.FC = () => {
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
           update({ url: e.target.value })
         }
+        onBlur={persist}
       />
       <TextField
         name={t('webdav.username')}
@@ -204,6 +218,7 @@ const WebDAVConfigForm: React.FC = () => {
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
           update({ username: e.target.value })
         }
+        onBlur={persist}
       />
       <TextField
         name={t('webdav.password')}
@@ -212,6 +227,7 @@ const WebDAVConfigForm: React.FC = () => {
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
           update({ password: e.target.value })
         }
+        onBlur={persist}
       />
       <TextField
         name={t('webdav.directory')}
@@ -220,6 +236,7 @@ const WebDAVConfigForm: React.FC = () => {
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
           update({ directory: e.target.value })
         }
+        onBlur={persist}
       />
     </div>
   )

@@ -9,6 +9,7 @@ export default {
   'home.deselect_all': '取消选择所有',
   'home.export': '导出',
   'home.import': '导入',
+  'home.refresh': '刷新',
   'home.upload': '上传',
   'home.delete': '删除',
 

@@ -9,6 +9,7 @@ export default {
   'home.deselect_all': 'すべて選択解除',
   'home.export': 'エクスポート',
   'home.import': 'インポート',
+  'home.refresh': '更新',
   'home.upload': 'アップロード',
   'home.delete': '削除',
 

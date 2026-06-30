@@ -423,6 +423,16 @@ const Library: React.FC = () => {
               <>
                 <Button
                   variant="secondary"
+                  onClick={() => {
+                    // re-scan the remote folder & re-attempt covers
+                    attempted.current.clear()
+                    mutateRemoteFiles()
+                  }}
+                >
+                  {t('refresh')}
+                </Button>
+                <Button
+                  variant="secondary"
                   disabled={!books.length}
                   onClick={pack}
                 >

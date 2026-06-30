@@ -43,6 +43,14 @@ export function ensureSchema(): Promise<void> {
         created_at timestamptz NOT NULL DEFAULT now()
       )
     `
+    await sql`
+      CREATE TABLE IF NOT EXISTS user_settings (
+        user_id uuid NOT NULL,
+        key text NOT NULL,
+        value text,
+        PRIMARY KEY (user_id, key)
+      )
+    `
     await bootstrapAdmin()
   })().catch((e) => {
     // allow a retry on the next request if setup failed
@@ -94,6 +102,27 @@ export async function setSetting(key: string, value: string) {
 
 export async function isRegistrationOpen() {
   return (await getSetting(REGISTRATION_OPEN_KEY)) === 'true'
+}
+
+// --- Per-user settings (e.g. WebDAV credentials, synced across devices) ---
+
+export async function getUserSetting(userId: string, key: string) {
+  const { rows } = await sql<{ value: string }>`
+    SELECT value FROM user_settings WHERE user_id = ${userId} AND key = ${key} LIMIT 1
+  `
+  return rows[0]?.value
+}
+
+export async function setUserSetting(
+  userId: string,
+  key: string,
+  value: string,
+) {
+  await sql`
+    INSERT INTO user_settings (user_id, key, value)
+    VALUES (${userId}, ${key}, ${value})
+    ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
+  `
 }
 
 // --- Users (admin management) ---

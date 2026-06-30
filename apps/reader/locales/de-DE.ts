@@ -9,6 +9,7 @@ export default {
   'home.deselect_all': 'Alle abwählen',
   'home.export': 'Exportieren',
   'home.import': 'Importieren',
+  'home.refresh': 'Aktualisieren',
   'home.upload': 'Hochladen',
   'home.delete': 'Löschen',
 
