@@ -27,7 +27,7 @@ export function deserializeData(text: string) {
     // migrate `BookRecord`
   }
 
-  return books
+  return books ?? []
 }
 
 /** Per-book personal state (kept separate from the shared catalog). */

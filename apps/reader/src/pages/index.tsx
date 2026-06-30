@@ -29,6 +29,11 @@ import {
 import { reader, useReaderSnapshot } from '../models'
 import { lock } from '../styles'
 import { getProvider, pack } from '../sync'
+import {
+  cleanRemoteName,
+  dedupeBookRecords,
+  namesMatch,
+} from '../sync/filename'
 import { copy } from '../utils'
 
 const placeholder = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect fill="gray" fill-opacity="0" width="1" height="1"/></svg>`
@@ -151,11 +156,12 @@ const Library: React.FC = () => {
         if (books.length === 0) return
 
         const newRemoteBooks = remoteFiles
-          .map((f) => books.find((b) => b.name === f.name))
+          .map((f) => books.find((b) => namesMatch(b.name, f.name)))
           .filter(Boolean) as BookRecord[]
 
-        getProvider().writeCatalog(newRemoteBooks)
-        mutateRemoteBooks(newRemoteBooks, { revalidate: false })
+        const dedupedRemoteBooks = dedupeBookRecords(newRemoteBooks)
+        getProvider().writeCatalog(dedupedRemoteBooks)
+        mutateRemoteBooks(dedupedRemoteBooks, { revalidate: false })
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,7 +169,7 @@ const Library: React.FC = () => {
 
   useEffect(() => {
     if (!previousRemoteBooks && remoteBooks) {
-      db?.books.bulkPut(remoteBooks)
+      db?.books.bulkPut(dedupeBookRecords(remoteBooks))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remoteBooks])
@@ -177,13 +183,14 @@ const Library: React.FC = () => {
   // into a WebDAV folder). Discovered items stay out of `db.books` until opened.
   const items = useMemo<DisplayBook[]>(() => {
     const localBooks = books ?? []
-    const localNames = new Set(localBooks.map((b) => b.name))
+    const localNames = new Set(localBooks.map((b) => cleanRemoteName(b.name)))
     const placeholders = (remoteFiles ?? [])
-      .filter((f) => !localNames.has(f.name))
+      .filter((f) => !localNames.has(cleanRemoteName(f.name)))
       .map<DisplayBook>((f) => ({
-        id: DISC_PREFIX + f.name,
-        name: f.name,
-        title: discoveredTitles[f.name] ?? f.name,
+        id: DISC_PREFIX + cleanRemoteName(f.name),
+        name: cleanRemoteName(f.name),
+        title:
+          discoveredTitles[cleanRemoteName(f.name)] ?? cleanRemoteName(f.name),
         isRemote: true,
       }))
     const locals = localBooks.map<DisplayBook>((b) => ({
@@ -364,8 +371,8 @@ const Library: React.FC = () => {
                     toggleSelect()
 
                     for (const book of selectedBooks) {
-                      const remoteFile = remoteFiles?.find(
-                        (f) => f.name === book.name,
+                      const remoteFile = remoteFiles?.find((f) =>
+                        namesMatch(f.name, book.name),
                       )
                       if (remoteFile) continue
 
@@ -397,7 +404,14 @@ const Library: React.FC = () => {
                     )
                     if (!deletableBooks.length) return
 
-                    const bookIds = deletableBooks.map((b) => b.id)
+                    const allLocalBooks = (await db?.books.toArray()) ?? []
+                    const bookIds = allLocalBooks
+                      .filter((book) =>
+                        deletableBooks.some((b) =>
+                          namesMatch(b.name, book.name),
+                        ),
+                      )
+                      .map((b) => b.id)
                     db?.books.bulkDelete(bookIds)
                     db?.covers.bulkDelete(bookIds)
                     db?.files.bulkDelete(bookIds)
@@ -409,7 +423,10 @@ const Library: React.FC = () => {
                           deletableBooks.map((b) => b.name),
                         )
                         return data?.filter(
-                          (f) => !deletableBooks.find((b) => b.name === f.name),
+                          (f) =>
+                            !deletableBooks.find((b) =>
+                              namesMatch(b.name, f.name),
+                            ),
                         )
                       },
                       { revalidate: false },
@@ -518,7 +535,7 @@ const Book: React.FC<BookProps> = ({
   const cover = covers?.find((c) => c.id === item.id)?.cover
   const percentage = item.book?.percentage
   const synced =
-    item.isRemote || !!remoteFiles?.find((f) => f.name === item.name)
+    item.isRemote || !!remoteFiles?.find((f) => namesMatch(f.name, item.name))
 
   const Icon = selected ? MdCheckBox : MdCheckBoxOutlineBlank
 

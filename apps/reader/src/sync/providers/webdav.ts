@@ -1,4 +1,10 @@
 import { BookRecord } from '../../db'
+import {
+  chooseRemoteName,
+  cleanRemoteName,
+  dedupeBookRecords,
+  namesMatch,
+} from '../filename'
 import { DATA_FILENAME, deserializeData, serializeData } from '../serialize'
 import { StorageProvider } from '../types'
 import { getWebDAVConfig } from '../webdavConfig'
@@ -72,6 +78,70 @@ function basename(href: string) {
   return trimSlashes(decoded).split('/').pop() ?? ''
 }
 
+async function listDir(dir: string) {
+  const { request } = getClient()
+  const res = await request(dir, {
+    method: 'PROPFIND',
+    headers: { Depth: '1' },
+  })
+  if (res.status === 404) return []
+  if (!res.ok) throw new Error(`WebDAV PROPFIND failed: ${res.status}`)
+
+  const text = await res.text()
+  const doc = new DOMParser().parseFromString(text, 'application/xml')
+
+  const names: string[] = []
+  const responses = Array.from(doc.getElementsByTagName('*')).filter(
+    (el) => el.localName === 'response',
+  )
+  for (const resp of responses) {
+    const hrefEl = Array.from(resp.getElementsByTagName('*')).find(
+      (el) => el.localName === 'href',
+    )
+    const isCollection = Array.from(resp.getElementsByTagName('*')).some(
+      (el) => el.localName === 'collection',
+    )
+    if (!hrefEl || isCollection) continue
+    const name = basename(hrefEl.textContent ?? '')
+    if (name) names.push(name)
+  }
+
+  return names
+}
+
+function compactRemoteNames(names: string[]) {
+  const byCleanName = new Map<string, string>()
+
+  for (const name of names) {
+    const cleanName = cleanRemoteName(name)
+    byCleanName.set(
+      cleanName,
+      chooseRemoteName(byCleanName.get(cleanName), name),
+    )
+  }
+
+  return [...byCleanName.values()]
+}
+
+async function findRemoteNames(dir: string, cleanName: string) {
+  const names = await listDir(dir)
+  return names.filter((name) => namesMatch(name, cleanName))
+}
+
+async function findRemoteName(dir: string, cleanName: string) {
+  return compactRemoteNames(await findRemoteNames(dir, cleanName))[0]
+}
+
+async function fetchByCleanName(dir: string, cleanName: string) {
+  const { request } = getClient()
+  const direct = await request(`${dir}/${encodeURIComponent(cleanName)}`)
+  if (direct.ok || direct.status !== 404) return direct
+
+  const remoteName = await findRemoteName(dir, cleanName)
+  if (!remoteName) return direct
+  return request(`${dir}/${encodeURIComponent(remoteName)}`)
+}
+
 export const webdavProvider: StorageProvider = {
   id: 'webdav',
   isConfigured() {
@@ -79,37 +149,12 @@ export const webdavProvider: StorageProvider = {
     return !!url
   },
   async list() {
-    const { request } = getClient()
-    const res = await request(getFilesDir(), {
-      method: 'PROPFIND',
-      headers: { Depth: '1' },
-    })
-    if (res.status === 404) return []
-    if (!res.ok) throw new Error(`WebDAV PROPFIND failed: ${res.status}`)
-
-    const text = await res.text()
-    const doc = new DOMParser().parseFromString(text, 'application/xml')
-
-    const names: string[] = []
-    const responses = Array.from(doc.getElementsByTagName('*')).filter(
-      (el) => el.localName === 'response',
-    )
-    for (const resp of responses) {
-      const hrefEl = Array.from(resp.getElementsByTagName('*')).find(
-        (el) => el.localName === 'href',
-      )
-      const isCollection = Array.from(resp.getElementsByTagName('*')).some(
-        (el) => el.localName === 'collection',
-      )
-      if (!hrefEl || isCollection) continue
-      const name = basename(hrefEl.textContent ?? '')
-      if (name) names.push(name)
-    }
-    return names.map((name) => ({ name }))
+    return compactRemoteNames(await listDir(getFilesDir())).map((name) => ({
+      name: cleanRemoteName(name),
+    }))
   },
   async download(name) {
-    const { request } = getClient()
-    const res = await request(`${getFilesDir()}/${encodeURIComponent(name)}`)
+    const res = await fetchByCleanName(getFilesDir(), cleanRemoteName(name))
     if (!res.ok) throw new Error(`WebDAV GET ${name} failed: ${res.status}`)
     return res.blob()
   },
@@ -124,8 +169,19 @@ export const webdavProvider: StorageProvider = {
   },
   async delete(names) {
     const { request } = getClient()
+    const remoteNames = (
+      await Promise.all(
+        names.map(async (name) => {
+          const matches = await findRemoteNames(
+            getFilesDir(),
+            cleanRemoteName(name),
+          )
+          return matches.length ? matches : [name]
+        }),
+      )
+    ).flat()
     await Promise.all(
-      names.map(async (name) => {
+      remoteNames.map(async (name) => {
         const res = await request(
           `${getFilesDir()}/${encodeURIComponent(name)}`,
           {
@@ -139,11 +195,10 @@ export const webdavProvider: StorageProvider = {
     )
   },
   async readData() {
-    const { request } = getClient()
-    const res = await request(`${BASE_DIR}/${DATA_FILENAME}`)
+    const res = await fetchByCleanName(BASE_DIR, DATA_FILENAME)
     if (res.status === 404) return []
     if (!res.ok) throw new Error(`WebDAV GET data failed: ${res.status}`)
-    return deserializeData(await res.text())
+    return dedupeBookRecords(deserializeData(await res.text()))
   },
   // Per-user backend: catalog and progress live together in one data.json.
   writeCatalog(books: BookRecord[]) {
@@ -160,7 +215,7 @@ async function writeData(books: BookRecord[]) {
   const res = await request(`${BASE_DIR}/${DATA_FILENAME}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: serializeData(books),
+    body: serializeData(dedupeBookRecords(books)),
   })
   if (!res.ok) throw new Error(`WebDAV PUT data failed: ${res.status}`)
 }

@@ -5,6 +5,11 @@ import ePub, { Book } from '@flow/epubjs'
 import { BookRecord, db } from './db'
 import { mapExtToMimes } from './mime'
 import { unpack } from './sync'
+import {
+  cleanBookRecordName,
+  cleanRemoteName,
+  namesMatch,
+} from './sync/filename'
 
 export async function fileToEpub(file: File) {
   const data = await file.arrayBuffer()
@@ -28,7 +33,12 @@ export async function handleFiles(files: Iterable<File>) {
       continue
     }
 
-    let book = books?.find((b) => b.name === file.name)
+    let book = books?.find((b) => namesMatch(b.name, file.name))
+    if (book) {
+      const cleanBook = cleanBookRecordName(book)
+      if (cleanBook.name !== book.name) db?.books.update(book.id, cleanBook)
+      book = cleanBook
+    }
 
     if (!book) {
       book = await addBook(file)
@@ -46,7 +56,7 @@ export async function addBook(file: File) {
 
   const book: BookRecord = {
     id: uuidv4(),
-    name: file.name || `${metadata.title}.epub`,
+    name: cleanRemoteName(file.name || `${metadata.title}.epub`),
     size: file.size,
     metadata,
     createdAt: Date.now(),
@@ -105,14 +115,18 @@ async function toDataUrl(url: string) {
 }
 
 export async function fetchBook(url: string) {
-  const filename = decodeURIComponent(/\/([^/]*\.epub)$/i.exec(url)?.[1] ?? '')
-  const books = await db?.books.toArray()
-  const book = books?.find((b) => b.name === filename)
-
-  return (
-    book ??
-    fetch(url)
-      .then((res) => res.blob())
-      .then((blob) => addBook(new File([blob], filename)))
+  const filename = cleanRemoteName(
+    decodeURIComponent(/\/([^/]*\.epub)$/i.exec(url)?.[1] ?? ''),
   )
+  const books = await db?.books.toArray()
+  const book = books?.find((b) => namesMatch(b.name, filename))
+  if (book) {
+    const cleanBook = cleanBookRecordName(book)
+    if (cleanBook.name !== book.name) db?.books.update(book.id, cleanBook)
+    return cleanBook
+  }
+
+  return fetch(url)
+    .then((res) => res.blob())
+    .then((blob) => addBook(new File([blob], filename)))
 }
