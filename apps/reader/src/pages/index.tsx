@@ -293,7 +293,7 @@ const Library: React.FC = () => {
 
   return (
     <DropZone
-      className="scroll-parent h-full min-h-0 p-4 pb-20 sm:pb-4"
+      className="scroll-parent h-full min-h-0 p-4"
       onDrop={(e) => {
         const bookId = e.dataTransfer.getData('text/plain')
         const book = books.find((b) => b.id === bookId)
@@ -474,7 +474,7 @@ const Library: React.FC = () => {
         </div>
       </div>
 
-      <div className="scroll min-h-0 flex-1 pr-1 pb-2">
+      <div className="scroll min-h-0 flex-1 pr-1 pb-20 sm:pb-2">
         <ul
           className="grid"
           style={{

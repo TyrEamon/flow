@@ -99,7 +99,7 @@ function ReaderGroup({ index }: ReaderGroupProps) {
 
   return (
     <div
-      className="ReaderGroup flex flex-1 flex-col overflow-hidden focus:outline-none"
+      className="ReaderGroup flex min-h-0 flex-1 flex-col overflow-hidden focus:outline-none"
       onMouseDown={handleMouseDown}
       style={{ width: size }}
     >
@@ -130,7 +130,7 @@ function ReaderGroup({ index }: ReaderGroupProps) {
       </Tab.List>
 
       <DropZone
-        className={clsx('flex-1', isTouchScreen || 'h-0')}
+        className={clsx('min-h-0 flex-1', isTouchScreen || 'h-0')}
         split
         onDrop={async (e, position) => {
           // read `e.dataTransfer` first to avoid get empty value after `await`
@@ -196,7 +196,9 @@ interface PaneContainerProps {
   active: boolean
 }
 const PaneContainer: React.FC<PaneContainerProps> = ({ active, children }) => {
-  return <div className={clsx('h-full', active || 'hidden')}>{children}</div>
+  return (
+    <div className={clsx('h-full min-h-0', active || 'hidden')}>{children}</div>
+  )
 }
 
 interface BookPaneProps {

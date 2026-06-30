@@ -12,7 +12,7 @@ export const Page: React.FC<PageProps> = ({
 }) => {
   return (
     <div
-      className={clsx('scroll h-full p-4 pb-20 sm:pb-4', className)}
+      className={clsx('scroll h-full min-h-0 p-4 pb-20 sm:pb-4', className)}
       {...props}
     >
       <h1
